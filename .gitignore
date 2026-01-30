@@ -1,4 +1,10 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+node_modules/
+.env
+.firebase/
+dist/
+build/
+*.log
 
 # dependencies
 /node_modules

@@ -1,25 +1,33 @@
-import logo from './logo.svg';
-import './App.css';
+import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
+import InventoryLogger from "./screens/InventoryLogger";
+import InventoryDashboard from "./screens/InventoryDashboard";
 
-function App() {
+export default function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <Router>
+      <nav style={styles.nav}>
+        <Link to="/" style={styles.link}>Log Event</Link>
+        <Link to="/inventory" style={styles.link}>Inventory Dashboard</Link>
+      </nav>
+
+      <Routes>
+        <Route path="/" element={<InventoryLogger />} />
+        <Route path="/inventory" element={<InventoryDashboard />} />
+      </Routes>
+    </Router>
   );
 }
 
-export default App;
+const styles = {
+  nav: {
+    display: "flex",
+    gap: 16,
+    padding: 16,
+    background: "#111"
+  },
+  link: {
+    color: "#fff",
+    textDecoration: "none",
+    fontWeight: 600
+  }
+};

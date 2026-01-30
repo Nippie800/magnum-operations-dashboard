@@ -11,3 +11,63 @@ code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
     monospace;
 }
+/* ---------------- PRINT VIEW (Magnum Report) ---------------- */
+@media print {
+  /* remove background + make text crisp */
+  body {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Hide interactive controls + dev tools */
+  button,
+  input,
+  select,
+  label,
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Remove shadows + extra padding so it fits on paper */
+  .print-root * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Header becomes a clean title bar */
+  .print-root h2 {
+    color: #000 !important;
+  }
+
+  /* Reduce padding for print */
+  .print-root {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Make panels and cards print like sections */
+  .print-root .print-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Avoid breaking cards */
+  .print-root .print-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Make tags readable on paper */
+  .print-root span {
+    border: 1px solid #ddd !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* Optional: tighten lists */
+  ul {
+    margin: 0 !important;
+    padding-left: 18px !important;
+  }
+}
