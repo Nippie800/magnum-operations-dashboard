@@ -9,6 +9,8 @@ import {
   getReorderRisk,
 } from "../services/inventoryIntelligence";
 import { downloadCSV } from "../services/exportCsv";
+import { BRAND } from "../constants/brand";
+import { UI } from "../constants/ui";
 
 export default function InventoryDashboard() {
   const [state, setState] = useState({});
@@ -30,7 +32,6 @@ export default function InventoryDashboard() {
     try {
       const snap = await getDocs(collection(db, "inventoryEvents"));
       const raw = snap.docs.map((d) => d.data());
-
       setEvents(raw);
       setState(computeInventoryState(raw));
     } catch (err) {
@@ -40,7 +41,7 @@ export default function InventoryDashboard() {
     }
   };
 
-  /* ---------- Calculations ---------- */
+  /* ---------- Derived Values ---------- */
 
   const items = useMemo(() => Object.values(state), [state]);
 
@@ -84,12 +85,8 @@ export default function InventoryDashboard() {
   // Filters
   const filteredEntries = useMemo(() => {
     return Object.entries(state).filter(([itemId, item]) => {
-      const matchesSearch = itemId
-        .toLowerCase()
-        .includes(search.toLowerCase());
-
+      const matchesSearch = itemId.toLowerCase().includes(search.toLowerCase());
       const matchesLow = !lowOnly || (Number(item.total) || 0) <= 20;
-
       const matchesLoc =
         filterLoc === "ALL"
           ? true
@@ -99,7 +96,7 @@ export default function InventoryDashboard() {
     });
   }, [state, search, lowOnly, filterLoc]);
 
-  /* ---------- Colors ---------- */
+  /* ---------- Status Colors ---------- */
 
   const healthColor = (qty) => {
     if (qty <= 5) return "#ff4d4f";
@@ -127,16 +124,33 @@ export default function InventoryDashboard() {
     downloadCSV("magnum_inventory_summary.csv", rows);
   };
 
-  if (loading) return <p style={styles.center}>Loading dashboard…</p>;
+  const seedAndRefresh = async () => {
+    await seedInventoryData();
+    await fetchData();
+  };
 
+  if (loading) return <p style={styles.center}>Loading dashboard…</p>;
   if (!items.length) return <p style={styles.center}>No inventory data yet</p>;
 
   return (
-   <div className="print-root" style={styles.page}>
-
-      {/* HEADER */}
+    <div className="print-root" style={styles.page}>
+      {/* HEADER STRIP */}
       <div style={styles.header}>
-        <h2 style={{ color: "white", margin: 0 }}>Magnum Inventory Dashboard</h2>
+        <div>
+          <h2 style={styles.headerTitle}>Inventory Dashboard</h2>
+          <p style={styles.headerSub}>
+            Live stock state (derived from inventory events)
+          </p>
+        </div>
+
+        <div style={styles.headerActions}>
+          <button style={UI.buttonHeader} onClick={exportCSV}>
+            Export CSV
+          </button>
+          <button style={UI.buttonHeader} onClick={() => window.print()}>
+            Print
+          </button>
+        </div>
       </div>
 
       {/* SUMMARY CARDS */}
@@ -147,9 +161,8 @@ export default function InventoryDashboard() {
         <SummaryCard label="Total Items" value={items.length} />
       </div>
 
-      {/* DAY 6 PANELS */}
+      {/* INTELLIGENCE PANELS */}
       <div className="print-section" style={styles.panels}>
-
         {/* Alerts */}
         <div style={styles.panel}>
           <h3 style={styles.panelTitle}>⚠ Alerts</h3>
@@ -227,7 +240,7 @@ export default function InventoryDashboard() {
         </div>
       </div>
 
-      {/* CONTROLS: Search + filters + actions */}
+      {/* FILTERS + ACTIONS */}
       <div style={styles.controls}>
         <input
           style={styles.search}
@@ -258,34 +271,18 @@ export default function InventoryDashboard() {
           Low stock only
         </label>
 
-        <button style={styles.actionBtn} onClick={exportCSV}>
-          Export CSV
-        </button>
-
-        <button style={styles.actionBtn} onClick={() => window.print()}>
-          Print
-        </button>
-
         {/* Dev only */}
-        <button
-          style={{ ...styles.actionBtn, borderColor: "#0d6efd" }}
-          onClick={async () => {
-            await seedInventoryData();
-            fetchData();
-          }}
-        >
+        <button style={styles.actionBtn} onClick={seedAndRefresh}>
           Seed Dummy Data
         </button>
       </div>
 
       {/* ITEM CARDS */}
       <div className="print-section" style={styles.grid}>
-
         {filteredEntries.map(([itemId, item]) => (
           <div key={itemId} className="print-card" style={styles.card}>
-
             <div style={styles.cardHeader}>
-              <h3 style={{ margin: 0 }}>{itemId}</h3>
+              <h3 style={{ margin: 0, color: BRAND.charcoal }}>{itemId}</h3>
 
               <span
                 style={{
@@ -310,7 +307,6 @@ export default function InventoryDashboard() {
         ))}
       </div>
 
-      {/* If filter yields nothing */}
       {filteredEntries.length === 0 && (
         <p style={styles.center}>No items match your filters.</p>
       )}
@@ -332,49 +328,54 @@ function SummaryCard({ label, value }) {
 /* ---------- STYLES ---------- */
 
 const styles = {
-  page: {
-    background: "#f5f7fb",
-    minHeight: "100vh",
-    fontFamily: "system-ui",
-  },
+  page: UI.page,
 
   header: {
-    background: "#0d6efd",
-    padding: "18px 24px",
-    marginBottom: 18,
+    ...UI.headerStrip,
+    marginBottom: 16,
   },
+
+  headerTitle: {
+    color: BRAND.white,
+    margin: 0,
+    fontWeight: 900,
+    fontSize: 18,
+  },
+
+  headerSub: {
+    color: "rgba(255,255,255,0.85)",
+    margin: "4px 0 0",
+    fontSize: 12,
+  },
+
+  headerActions: { display: "flex", gap: 10, alignItems: "center" },
 
   center: {
     textAlign: "center",
     padding: 28,
-    color: "#333",
+    color: BRAND.charcoal,
   },
 
   summaryGrid: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
     gap: 16,
-    padding: "0 20px 18px",
+    padding: "0 20px 16px",
   },
 
   summaryCard: {
-    background: "white",
+    ...UI.card,
     padding: 18,
-    borderRadius: 12,
-    boxShadow: "0 4px 10px rgba(0,0,0,0.06)",
     textAlign: "center",
   },
 
-  summaryLabel: {
-    fontSize: 13,
-    color: "#666",
-    marginBottom: 6,
-  },
+  summaryLabel: { fontSize: 13, color: "#666", marginBottom: 6 },
 
   summaryValue: {
-    color: "#0d6efd",
+    color: BRAND.teal,
     fontSize: 26,
     margin: 0,
+    fontWeight: 900,
   },
 
   panels: {
@@ -385,13 +386,15 @@ const styles = {
   },
 
   panel: {
-    background: "#fff",
-    borderRadius: 12,
-    boxShadow: "0 6px 14px rgba(0,0,0,0.07)",
+    ...UI.card,
     padding: 14,
   },
 
-  panelTitle: { margin: "0 0 10px 0" },
+  panelTitle: {
+    margin: "0 0 10px 0",
+    color: BRAND.charcoal,
+    fontWeight: 900,
+  },
 
   row: {
     display: "flex",
@@ -400,25 +403,20 @@ const styles = {
     borderBottom: "1px solid #f0f0f0",
   },
 
-  muted: { color: "#666", fontSize: 13 },
+  muted: UI.muted,
 
-  critical: { color: "#ff4d4f", fontWeight: 800, margin: "8px 0 4px" },
-  low: { color: "#faad14", fontWeight: 800, margin: "8px 0 4px" },
+  critical: { color: "#ff4d4f", fontWeight: 900, margin: "8px 0 4px" },
+  low: { color: "#faad14", fontWeight: 900, margin: "8px 0 4px" },
 
   riskPill: {
     color: "#fff",
-    fontWeight: 800,
+    fontWeight: 900,
     padding: "2px 10px",
     borderRadius: 999,
     fontSize: 12,
   },
 
-  helper: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 10,
-    lineHeight: 1.4,
-  },
+  helper: { fontSize: 12, color: "#666", marginTop: 10, lineHeight: 1.4 },
 
   controls: {
     display: "flex",
@@ -428,37 +426,19 @@ const styles = {
     alignItems: "center",
   },
 
-  search: {
-    flex: "1 1 240px",
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid #d0d7de",
-  },
+  search: { ...UI.input, flex: "1 1 240px" },
 
-  select: {
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid #d0d7de",
-    background: "#fff",
-  },
+  select: { ...UI.input, padding: "10px 12px" },
 
   checkbox: {
     display: "flex",
     gap: 8,
     alignItems: "center",
     fontSize: 13,
-    color: "#333",
+    color: BRAND.charcoal,
   },
 
-  actionBtn: {
-    background: "#fff",
-    color: "#0d6efd",
-    border: "1px solid #d0d7de",
-    padding: "10px 12px",
-    borderRadius: 12,
-    cursor: "pointer",
-    fontWeight: 700,
-  },
+  actionBtn: UI.buttonGhost,
 
   grid: {
     display: "grid",
@@ -468,10 +448,8 @@ const styles = {
   },
 
   card: {
-    background: "white",
+    ...UI.card,
     padding: 16,
-    borderRadius: 12,
-    boxShadow: "0 6px 14px rgba(0,0,0,0.07)",
   },
 
   cardHeader: {
@@ -482,29 +460,15 @@ const styles = {
   },
 
   badge: {
-    color: "white",
+    color: BRAND.white,
     padding: "4px 10px",
-    borderRadius: 8,
-    fontWeight: 800,
+    borderRadius: 10,
+    fontWeight: 900,
   },
 
-  meta: {
-    fontSize: 13,
-    color: "#555",
-    marginBottom: 8,
-  },
+  meta: { fontSize: 13, color: "#555", marginBottom: 8 },
 
-  locationWrap: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 6,
-  },
+  locationWrap: { display: "flex", flexWrap: "wrap", gap: 6 },
 
-  locationTag: {
-    background: "#e7f1ff",
-    color: "#0d6efd",
-    padding: "4px 8px",
-    borderRadius: 8,
-    fontSize: 12,
-  },
+  locationTag: UI.tag,
 };
