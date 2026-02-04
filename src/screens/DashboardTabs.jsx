@@ -6,28 +6,38 @@ import magnumLogo from "../assets/magnum-logo.jpg";
 export default function DashboardTabs() {
   const location = useLocation();
   const navigate = useNavigate();
-
   const path = location.pathname;
 
   // Determine which tab is active
   const current = path.startsWith("/vault")
     ? "vault"
-    : path.startsWith("/inventory")
-    ? "inventory"
+    : path.startsWith("/admin-login")
+    ? "admin"
+    : path.startsWith("/log")
+    ? "log"
     : "inventory";
 
-  const setTab = (tab) => {
-    // only store main tool tabs (not /log)
-    localStorage.setItem("magnum:lastTab", tab);
-    navigate(tab === "vault" ? "/vault" : "/inventory");
+  // Tab navigation map (explicit = no surprises)
+  const TAB_TO_ROUTE = {
+    inventory: "/inventory",
+    vault: "/vault",
+    admin: "/admin-login",
+  };
+
+  const setTab = (tabKey) => {
+    // Only remember the "main" tool tabs for owner experience
+    if (tabKey === "inventory" || tabKey === "vault") {
+      localStorage.setItem("magnum:lastTab", tabKey);
+    }
+    navigate(TAB_TO_ROUTE[tabKey] || "/inventory");
   };
 
   const openInNewWindow = () => window.open(window.location.href, "_blank");
 
-  // Nice helper for active styles
-  const tabStyle = (tab) => ({
+  // Active styles helper
+  const tabStyle = (tabKey) => ({
     ...styles.tabBtn,
-    ...(current === tab ? styles.tabBtnActive : {}),
+    ...(current === tabKey ? styles.tabBtnActive : {}),
   });
 
   return (
@@ -47,6 +57,7 @@ export default function DashboardTabs() {
             Open in new window
           </button>
 
+          {/* Keep Log Event as a link (admin tool) */}
           <Link to="/log" style={styles.loggerLink}>
             Log Event
           </Link>
@@ -63,13 +74,19 @@ export default function DashboardTabs() {
           📁 Document Vault
         </button>
 
-        {/* Optional subtle hint if user is on /log */}
-        {path.startsWith("/log") && (
-          <span style={styles.logHint}>You are in Admin tool: Log Event</span>
+        <button onClick={() => setTab("admin")} style={tabStyle("admin")}>
+          🔐 Admin Login
+        </button>
+
+        {/* Context hint on admin screens */}
+        {(current === "admin" || current === "log") && (
+          <span style={styles.logHint}>
+            🔒 Admin tools
+          </span>
         )}
       </div>
 
-      {/* Content area (THIS is what was missing) */}
+      {/* Content area */}
       <div style={styles.contentWrap}>
         <Outlet />
       </div>
@@ -79,7 +96,6 @@ export default function DashboardTabs() {
 
 const styles = {
   page: UI.page,
-
   header: UI.headerStrip,
 
   brandBlock: { display: "flex", alignItems: "center", gap: 12 },

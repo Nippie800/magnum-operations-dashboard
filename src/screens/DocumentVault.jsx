@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
 import { auth, db } from "../firebaseConfig/firebase";
@@ -8,6 +8,7 @@ import { BRAND } from "../constants/brand";
 import { UI } from "../constants/ui";
 
 const CATEGORY_OPTIONS = [
+  { code: "ALL", label: "All categories" },
   { code: "INVOICE", label: "Invoice" },
   { code: "RECEIPT", label: "Receipt" },
   { code: "QUOTE", label: "Quote" },
@@ -19,6 +20,12 @@ const CATEGORY_OPTIONS = [
   { code: "CONTRACT", label: "Contract / Agreement" },
   { code: "PURCHASE_ORDER", label: "Purchase Order" },
   { code: "BUILDING", label: "Building / Residence" },
+];
+
+const SORT_OPTIONS = [
+  { code: "DATE_DESC", label: "Newest first" },
+  { code: "DATE_ASC", label: "Oldest first" },
+  { code: "CATEGORY_AZ", label: "Category A → Z" },
 ];
 
 export default function DocumentVault() {
@@ -33,8 +40,15 @@ export default function DocumentVault() {
   const [category, setCategory] = useState("INVOICE");
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
-
   const [msg, setMsg] = useState("");
+
+  // Browser controls
+  const [search, setSearch] = useState("");
+  const [filterCategory, setFilterCategory] = useState("ALL");
+  const [sortMode, setSortMode] = useState("DATE_DESC");
+
+  // Preview state
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -46,6 +60,7 @@ export default function DocumentVault() {
         setAuthLoading(false);
       }
     });
+
     return () => unsub();
   }, []);
 
@@ -102,13 +117,73 @@ export default function DocumentVault() {
     }
   };
 
+  /* ---------- Browser helpers ---------- */
+
+  const categoryLabel = (code) =>
+    CATEGORY_OPTIONS.find((c) => c.code === code)?.label || code;
+
+  const formatDate = (ts) => {
+    const d =
+      ts?.toDate?.() || (typeof ts === "number" ? new Date(ts) : null) || null;
+    if (!d) return "—";
+    return d.toLocaleString();
+  };
+
+  const filteredDocs = useMemo(() => {
+    const s = search.trim().toLowerCase();
+
+    let arr = docs.filter((d) => {
+      const matchesCategory =
+        filterCategory === "ALL" ? true : d.category === filterCategory;
+
+      const matchesSearch =
+        !s ||
+        (d.title || "").toLowerCase().includes(s) ||
+        (d.category || "").toLowerCase().includes(s) ||
+        (d.audit?.uploadedByEmail || "").toLowerCase().includes(s);
+
+      return matchesCategory && matchesSearch;
+    });
+
+    if (sortMode === "DATE_ASC") {
+      arr = arr.sort((a, b) => {
+        const ad = a.audit?.uploadedAt?.toMillis?.() || 0;
+        const bd = b.audit?.uploadedAt?.toMillis?.() || 0;
+        return ad - bd;
+      });
+    } else if (sortMode === "DATE_DESC") {
+      arr = arr.sort((a, b) => {
+        const ad = a.audit?.uploadedAt?.toMillis?.() || 0;
+        const bd = b.audit?.uploadedAt?.toMillis?.() || 0;
+        return bd - ad;
+      });
+    } else if (sortMode === "CATEGORY_AZ") {
+      arr = arr.sort((a, b) =>
+        (a.category || "").localeCompare(b.category || "")
+      );
+    }
+
+    return arr;
+  }, [docs, search, filterCategory, sortMode]);
+
+  const openPreview = (d) => {
+    setPreviewDoc(d);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const closePreview = () => setPreviewDoc(null);
+
+  const getFileType = (d) => d.storage?.contentType || d.storage?.fileType || "";
+  const isPdf = (d) => (getFileType(d) || "").includes("pdf");
+  const isImage = (d) => (getFileType(d) || "").startsWith("image/");
+
   return (
     <div style={styles.page}>
-      {/* Vault Header */}
+      {/* Header */}
       <div style={styles.header}>
         <div>
           <h2 style={styles.headerTitle}>Document Vault</h2>
-          <p style={styles.headerSub}>Secure documents with audit history</p>
+          <p style={styles.headerSub}>Read-only browser + Admin uploads</p>
         </div>
 
         <span style={UI.pill}>
@@ -117,16 +192,73 @@ export default function DocumentVault() {
       </div>
 
       <div style={styles.wrap}>
-        <p style={styles.sub}>
-          Uploads are <strong>Admin only</strong>. View/download is available to
-          everyone who can access the dashboard.
-        </p>
+        {/* PREVIEW PANEL */}
+        {previewDoc && (
+          <div style={{ ...styles.card, marginTop: 0 }}>
+            <div style={styles.cardHeader}>
+              <div>
+                <h3 style={{ margin: 0, color: BRAND.charcoal }}>
+                  Preview: {previewDoc.title}
+                </h3>
+                <div style={styles.previewMeta}>
+                  <span style={UI.tag}>{categoryLabel(previewDoc.category)}</span>
+                  <span style={styles.previewMetaText}>
+                    Uploaded: {formatDate(previewDoc.audit?.uploadedAt)}
+                  </span>
+                  <span style={styles.previewMetaText}>
+                    By: {previewDoc.audit?.uploadedByEmail || "unknown"}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                {previewDoc.storage?.downloadUrl && (
+                  <a
+                    href={previewDoc.storage.downloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={styles.linkBtn}
+                  >
+                    Download / Open
+                  </a>
+                )}
+                <button style={UI.buttonGhost} onClick={closePreview}>
+                  Close Preview
+                </button>
+              </div>
+            </div>
+
+            <div style={styles.previewBody}>
+              {previewDoc.storage?.downloadUrl ? (
+                isPdf(previewDoc) ? (
+                  <iframe
+                    title="pdf-preview"
+                    src={previewDoc.storage.downloadUrl}
+                    style={styles.iframe}
+                  />
+                ) : isImage(previewDoc) ? (
+                  <img
+                    alt="preview"
+                    src={previewDoc.storage.downloadUrl}
+                    style={styles.previewImg}
+                  />
+                ) : (
+                  <p style={styles.muted}>
+                    Preview not available for this file type. Use “Download / Open”.
+                  </p>
+                )
+              ) : (
+                <p style={styles.muted}>No download link stored for this file.</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Upload Card */}
         <div style={styles.card}>
           <div style={styles.cardHeader}>
             <h3 style={{ margin: 0, color: BRAND.charcoal }}>Upload Document</h3>
-            <span style={styles.lockPill}>
+            <span style={{ ...UI.pill, background: BRAND.tealSoft2, color: BRAND.charcoal }}>
               🔒 Admin only (uploads)
             </span>
           </div>
@@ -157,7 +289,7 @@ export default function DocumentVault() {
                 onChange={(e) => setCategory(e.target.value)}
                 disabled={!isAdmin || uploading}
               >
-                {CATEGORY_OPTIONS.map((c) => (
+                {CATEGORY_OPTIONS.filter((c) => c.code !== "ALL").map((c) => (
                   <option key={c.code} value={c.code}>
                     {c.label}
                   </option>
@@ -179,10 +311,7 @@ export default function DocumentVault() {
           </div>
 
           <button
-            style={{
-              ...styles.btn,
-              opacity: !isAdmin || uploading ? 0.6 : 1,
-            }}
+            style={{ ...UI.buttonPrimary, opacity: !isAdmin || uploading ? 0.6 : 1 }}
             onClick={onUpload}
             disabled={!isAdmin || uploading}
           >
@@ -192,49 +321,104 @@ export default function DocumentVault() {
           {msg && <p style={styles.msg}>{msg}</p>}
         </div>
 
-        {/* Document List */}
+        {/* Browser Card */}
         <div style={styles.card}>
           <div style={styles.cardHeader}>
-            <h3 style={{ margin: 0, color: BRAND.charcoal }}>Recent Documents</h3>
-            <button style={styles.smallBtn} onClick={loadDocs}>
+            <h3 style={{ margin: 0, color: BRAND.charcoal }}>Document Browser</h3>
+
+            <button style={UI.buttonGhost} onClick={loadDocs}>
               Refresh
+            </button>
+          </div>
+
+          <div style={styles.controls}>
+            <input
+              style={styles.search}
+              placeholder="Search title, category, email…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+
+            <select
+              style={styles.select}
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+            >
+              {CATEGORY_OPTIONS.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              style={styles.select}
+              value={sortMode}
+              onChange={(e) => setSortMode(e.target.value)}
+            >
+              {SORT_OPTIONS.map((s) => (
+                <option key={s.code} value={s.code}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+
+            <button
+              style={UI.buttonGhost}
+              onClick={() => {
+                setSearch("");
+                setFilterCategory("ALL");
+                setSortMode("DATE_DESC");
+              }}
+            >
+              Clear
             </button>
           </div>
 
           {loadingDocs ? (
             <p style={styles.muted}>Loading documents…</p>
-          ) : docs.length === 0 ? (
-            <p style={styles.muted}>No documents yet.</p>
+          ) : filteredDocs.length === 0 ? (
+            <p style={styles.muted}>No documents match your search/filters.</p>
           ) : (
             <div style={styles.table}>
-              {docs.slice(0, 15).map((d) => (
+              {filteredDocs.map((d) => (
                 <div key={d.id} style={styles.row}>
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div style={styles.docTitle}>{d.title}</div>
                     <div style={styles.docMeta}>
-                      {d.category} • {d.audit?.uploadedByEmail || "unknown"}
+                      <span style={UI.tag}>{categoryLabel(d.category)}</span>
+                      <span style={styles.dot}>•</span>
+                      <span>{formatDate(d.audit?.uploadedAt)}</span>
+                      <span style={styles.dot}>•</span>
+                      <span>{d.audit?.uploadedByEmail || "unknown"}</span>
                     </div>
                   </div>
 
-                  {d.storage?.downloadUrl ? (
-                    <a
-                      style={styles.link}
-                      href={d.storage.downloadUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open
-                    </a>
-                  ) : (
-                    <span style={styles.muted}>No link</span>
-                  )}
+                  <div style={styles.rowActions}>
+                    <button style={UI.buttonGhost} onClick={() => openPreview(d)}>
+                      Preview
+                    </button>
+
+                    {d.storage?.downloadUrl ? (
+                      <a
+                        href={d.storage.downloadUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={styles.linkBtn}
+                      >
+                        Download
+                      </a>
+                    ) : (
+                      <span style={styles.muted}>No link</span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
           )}
 
           <p style={styles.help}>
-            Note: delete/edit is disabled to protect audit history.
+            Metadata editing and deletion is disabled to protect audit history.
           </p>
         </div>
       </div>
@@ -268,13 +452,7 @@ const styles = {
 
   wrap: { ...UI.container, paddingTop: 0 },
 
-  sub: { color: "#555", marginTop: 0 },
-
-  card: {
-    ...UI.card,
-    padding: 16,
-    marginTop: 14,
-  },
+  card: { ...UI.card, padding: 16, marginTop: 14 },
 
   cardHeader: {
     display: "flex",
@@ -282,11 +460,6 @@ const styles = {
     alignItems: "center",
     gap: 10,
     flexWrap: "wrap",
-  },
-
-  lockPill: {
-    ...UI.pill,
-    background: BRAND.tealSoft2,
   },
 
   notice: {
@@ -312,30 +485,83 @@ const styles = {
 
   input: UI.input,
 
-  help: { fontSize: 12, color: "#666", margin: "6px 0 0" },
-
-  btn: UI.buttonPrimary,
+  help: { fontSize: 12, color: "#666", margin: "10px 0 0" },
 
   msg: { marginTop: 10, fontSize: 13 },
 
-  smallBtn: UI.buttonGhost,
+  muted: UI.muted,
 
-  table: { marginTop: 10 },
+  controls: {
+    display: "flex",
+    gap: 10,
+    flexWrap: "wrap",
+    marginTop: 12,
+    alignItems: "center",
+  },
+
+  search: { ...UI.input, flex: "1 1 260px" },
+  select: { ...UI.input, padding: "10px 12px" },
+
+  table: { marginTop: 12 },
 
   row: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 10,
-    padding: "10px 0",
+    gap: 12,
+    padding: "12px 0",
     borderBottom: "1px solid #f0f0f0",
   },
 
   docTitle: { fontWeight: 900, color: BRAND.charcoal },
 
-  docMeta: { fontSize: 12, color: "#666", marginTop: 2 },
+  docMeta: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+  },
 
-  link: { color: BRAND.teal, fontWeight: 900, textDecoration: "none" },
+  dot: { opacity: 0.6 },
 
-  muted: UI.muted,
+  rowActions: { display: "flex", gap: 10, alignItems: "center" },
+
+  linkBtn: {
+    ...UI.buttonPrimary,
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  previewMeta: {
+    marginTop: 6,
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 10,
+    alignItems: "center",
+  },
+
+  previewMetaText: { fontSize: 12, color: "#666", fontWeight: 700 },
+
+  previewBody: { marginTop: 12 },
+
+  iframe: {
+    width: "100%",
+    height: 520,
+    border: `1px solid ${BRAND.border}`,
+    borderRadius: 12,
+  },
+
+  previewImg: {
+    width: "100%",
+    maxHeight: 520,
+    objectFit: "contain",
+    borderRadius: 12,
+    border: `1px solid ${BRAND.border}`,
+    background: BRAND.bg,
+  },
 };
